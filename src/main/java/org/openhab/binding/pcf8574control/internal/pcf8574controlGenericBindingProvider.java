@@ -21,6 +21,18 @@ import org.openhab.model.item.binding.BindingConfigParseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.pi4j.gpio.extension.pcf.PCF8574GpioProvider;
+import com.pi4j.gpio.extension.pcf.PCF8574Pin;
+import com.pi4j.io.gpio.GpioController;
+import com.pi4j.io.gpio.GpioFactory;
+import com.pi4j.io.gpio.GpioPinDigital;
+import com.pi4j.io.gpio.GpioPinDigitalOutput;
+import com.pi4j.io.gpio.Pin;
+import com.pi4j.io.gpio.PinMode;
+import com.pi4j.io.gpio.event.PinEvent;
+import com.pi4j.io.gpio.event.PinListener;
+import com.pi4j.io.i2c.I2CBus;
+
 
 /**
  * This class is responsible for parsing the binding configuration.
@@ -33,7 +45,8 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 	private static final Logger logger = 
 			LoggerFactory.getLogger(pcf8574controlGenericBindingProvider.class);
 	
-	private TreeMap<Integer, PCA9685PwmControl> PCA9685Map = new TreeMap<>();
+	private TreeMap<Integer, PCF8574GpioProvider> PCF8574Map = new TreeMap<>();
+	final 	GpioController gpio = GpioFactory.getInstance();
 	
 	/**
 	 * {@inheritDoc}
@@ -62,62 +75,93 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 	public void processBindingConfiguration(String context, Item item, String bindingConfig) throws BindingConfigParseException {		
 		super.processBindingConfiguration(context, item, bindingConfig);
 			
+		//Format: "I2CAddress;PinNumber;isOutput" => f.e. "32;0;out" or "32;1;in"
 		String[] properties = bindingConfig.split(";");		
 		pcf8574controlConfig config = new pcf8574controlConfig();
 		try{
 			config.address = Integer.parseInt(properties[0]);
-			config.pinNumber = Integer.parseInt(properties[1]);			
+			config.pinNumber = Integer.parseInt(properties[1]);
+			
 			checkOfValidValues(config, item.getName());
+			addBindingConfig(item, config);	
+			handleBoards(config); //Create new PCF8574GpioProvider for eventually new boards.
+				
+			logger.debug("processBindingConfiguration: (pcf8574control) ItemName: {}, Addresses: {}", item.toString(), PCF8574Map.keySet());
+			
+			Pin pin = new PCF8574Pin().ALL[config.pinNumber];
+			PCF8574Map.get(config.address).unexport(pin);
+			if(properties[2].toLowerCase().equals("out")){
+				logger.debug("processBindingConfiguration: (pcf8574control) ---<<<< gpioPinDigitalOutput >>>>---");				
+				PCF8574Map.get(config.address).export(pin, PinMode.DIGITAL_OUTPUT);
+			} else if (properties[2].toLowerCase().equals("in")){
+				PCF8574Map.get(config.address).export(pin, PinMode.DIGITAL_INPUT);
+				
+				PinListener lis = new PinListener() {					
+					@Override
+					public void handlePinEvent(PinEvent event) {
+						//logger.debug("---<<<<=================== Input listener event ======================>>>>--- {} {}", event);
+						
+					}
+				};
+				PCF8574Map.get(config.address).removeListener(pin, lis);
+				PCF8574Map.get(config.address).addListener(pin, lis);
+			}
+			
 		}catch(Exception e){
 			e.printStackTrace();
 		}
 		logger.debug("pcf8574controlGenericBindingProvider: processBindingConfiguration({},{}) is called!", config.address, config.pinNumber);
 		//parse bindingconfig here ...
-		
-		addBindingConfig(item, config);
-		handleBoards(config);
+				
 	}
 	
 	/* ================================= SELF WRITTEN METHODS - BEGIN ===============================*/
 	
 	private void checkOfValidValues(pcf8574controlConfig config, String itemName){
-		//pwmValue is no item-file value, so it isn't checked here.
-		if(config.address < 64 && config.address > 128){
-			throw new IllegalArgumentException("The given address '" + config.address + "'of the item '" + itemName + "' is invalid! PCA9685 must be between 64 and 128 (0x40 and 0x80)");
+		//isHigh is no item-file value, so it isn't checked here.
+		if(config.address < 32 || config.address > 63 || (config.address > 39 && config.address < 56)){
+			throw new IllegalArgumentException("The given address '" + config.address + "'of the item '" + itemName + "' is invalid! " +
+					"PCA8574 must be between 32-39 or 56-63 (0x20-0x27 or for A-Model 0x38-0x3F)");
 		}
 		
-		if(config.pinNumber < 0 && config.pinNumber > 15){
-			throw new IllegalArgumentException("The pinNumber of the item '" + itemName + "'is invalid! Must be between 0-15.");
+		if(config.pinNumber < 0 || config.pinNumber > 7){
+			throw new IllegalArgumentException("The pinNumber of the item '" + itemName + "'is invalid! Must be between 0-7.");
 		}				
 	}
 		
 	private void handleBoards(pcf8574controlConfig config){
 		try {
-			if(!PCA9685Map.containsKey(config.address)){
+			if(!PCF8574Map.containsKey(config.address)){
 				try{
-					PCA9685Map.put(config.address, new PCA9685PwmControl(config.address));	
-					logger.debug("handleBoards: added board with address: {} !", config.address);
+					PCF8574Map.put(config.address, new PCF8574GpioProvider(I2CBus.BUS_1, config.address));	
+					logger.debug("handleBoards: added PCF8574 board with address: {} !", config.address);
 				} catch (Exception e) {
 					e.printStackTrace();
 				}				
 			}
 			removeUnusedBoardsFromMap(config);
 		} catch (Exception e) {
-			logger.debug("Exception in handleBoards... however, it works.");
+			e.printStackTrace();
+			//logger.debug("Exception in PCF8574 handleBoards... however, it works.");
 		}
 	}
 	
 	private void removeUnusedBoardsFromMap(pcf8574controlConfig config){
 		keyLoop:
-		for(Integer mapKey : PCA9685Map.keySet()){
+		for(Integer mapKey : PCF8574Map.keySet()){
+			logger.debug("handleBoards: mapKey {} !", mapKey);
 			for(BindingConfig bindingConfig : bindingConfigs.values()){
-				pcf8574controlConfig conf = (pcf8574controlConfig) bindingConfig;
+				pcf8574controlConfig conf = (pcf8574controlConfig) bindingConfig;				
+				logger.debug("handleBoards: check {} !", conf.address);
 				if(mapKey == conf.address){
+					logger.debug("handleBoards: board found with address: {} !", conf.address);
 					continue keyLoop;
 				}				
 			}
-			PCA9685Map.remove(mapKey);
-			logger.debug("handleBoards: removed board with address: {} !", mapKey);
+			if(!bindingConfigs.values().isEmpty()){
+				PCF8574Map.remove(mapKey);
+				logger.debug("handleBoards: removed board with address: {} !", mapKey);
+			}
 		}
 	}
 
@@ -142,27 +186,27 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 		
 		return config.pinNumber;
 	}
-
+	
 	@Override
-	public int getPwmValue(String itemName) {
+	public boolean getIsHigh(String itemName) {
 		pcf8574controlConfig config = (pcf8574controlConfig) bindingConfigs.get(itemName);
 		
 		if (config == null) {
 			throw new IllegalArgumentException("The item name '" + itemName + "'is invalid or the item isn't configured");
 		}
 		
-		return config.pwmValue;
+		return config.isHigh;
 	}
 	
 	@Override
-	public void setPwmValue(String itemName, int value) {
+	public void setIsHigh(String itemName, boolean value) {
 		pcf8574controlConfig config = (pcf8574controlConfig) bindingConfigs.get(itemName);
 		
 		if (config == null) {
 			throw new IllegalArgumentException("The item name '" + itemName + "'is invalid or the item isn't configured");
 		}
 		
-		config.pwmValue = value;
+		config.isHigh = value;
 	}
 	
 	@Override
@@ -177,16 +221,15 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 	public class pcf8574controlConfig implements BindingConfig{
 		int address;
 		int pinNumber;
-		int pwmValue;
+		boolean isHigh;
 	}
 
 
 	@Override
-	public TreeMap<Integer, PCA9685PwmControl> getPCA9685Map() {		
-		return PCA9685Map;
+	public TreeMap<Integer, PCF8574GpioProvider> getPCF8574Map() {		
+		return PCF8574Map;
 	}
 
-	
 	
 	/* ================================= SELF WRITTEN METHODS - END ===============================*/
 	

@@ -4,9 +4,9 @@
 	<classpathentry excluding="**" kind="src" output="target/classes" path="src/main/resources"/>
 	<classpathentry kind="con" path="org.eclipse.pde.core.requiredPlugins"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
-	<classpathentry kind="lib" path="lib/pi4j-gpio-extension.jar"/>
-	<classpathentry kind="lib" path="lib/pi4j-core.jar"/>
+	<classpathentry kind="lib" path="lib/pi4j-core.jar" sourcepath="C:/Users/Michael/.m2/repository/com/pi4j/pi4j-core/1.0/pi4j-core-1.0-sources.jar"/>
 	<classpathentry kind="lib" path="lib/pi4j-device.jar"/>
+	<classpathentry kind="lib" path="lib/pi4j-gpio-extension.jar" sourcepath="C:/Users/Michael/.m2/repository/com/pi4j/pi4j-gpio-extension/1.0/pi4j-gpio-extension-1.0-sources.jar"/>
 	<classpathentry kind="lib" path="lib/pi4j-service.jar"/>
 	<classpathentry kind="output" path="target/classes"/>
 </classpath>

@@ -10,8 +10,11 @@ package org.openhab.binding.pcf8574control;
 
 import java.util.TreeMap;
 
-import org.openhab.binding.pcf8574control.internal.PCA9685PwmControl;
 import org.openhab.core.binding.BindingProvider;
+
+import com.pi4j.gpio.extension.pcf.PCF8574GpioProvider;
+import com.pi4j.io.gpio.GpioPinDigital;
+import com.pi4j.io.gpio.GpioPinDigitalOutput;
 
 
 /**
@@ -25,7 +28,7 @@ public interface pcf8574controlBindingProvider extends BindingProvider {
 	 * If all given items have the same I2C Address, it should exist only one Map-Entry).    
 	 * @return Returns the map with all configured Boards.
 	 */
-	public TreeMap<Integer, PCA9685PwmControl> getPCA9685Map();
+	public TreeMap<Integer, PCF8574GpioProvider> getPCF8574Map();
 	
 	/**
 	 * Get the I2C Address of the given Item
@@ -41,13 +44,14 @@ public interface pcf8574controlBindingProvider extends BindingProvider {
 	 */
 	public int getPinNumber(String itemName);
 	
+	
 	/**
 	 * Get the PWM value of the given Item 
 	 * @param itemName Name of the Item 
 	 * @return Returns the PWM value. (0-100)
 	 */
-	public int getPwmValue(String itemName);
-	public void setPwmValue(String itemName, int value);
+	public boolean getIsHigh(String itemName);
+	public void setIsHigh(String itemName, boolean value);
 	
 	/**
 	 * Is the given Item already configured?

@@ -8,15 +8,11 @@
  */
 package org.openhab.binding.pcf8574control.internal;
 
-import java.util.ArrayList;
 import java.util.Map;
 import org.apache.commons.lang.StringUtils;
 import org.openhab.binding.pcf8574control.pcf8574controlBindingProvider;
 import org.openhab.core.binding.AbstractActiveBinding;
-import org.openhab.core.library.types.DecimalType;
-import org.openhab.core.library.types.IncreaseDecreaseType;
 import org.openhab.core.library.types.OnOffType;
-import org.openhab.core.library.types.PercentType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
@@ -24,8 +20,14 @@ import org.osgi.framework.BundleContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.pi4j.gpio.extension.pca.PCA9685Pin;
+import com.pi4j.gpio.extension.pcf.PCF8574Pin;
+import com.pi4j.io.gpio.GpioController;
+import com.pi4j.io.gpio.GpioFactory;
+import com.pi4j.io.gpio.GpioPinDigitalOutput;
 import com.pi4j.io.gpio.Pin;
+import com.pi4j.io.gpio.PinState;
+import com.pi4j.io.gpio.event.PinEvent;
+import com.pi4j.io.gpio.event.PinListener;
 
 	
 
@@ -40,9 +42,7 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 
 	private static final Logger logger = 
 		LoggerFactory.getLogger(pcf8574controlBinding.class);	
-	
-	//public static PCA9685PwmControl pca = new PCA9685PwmControl(0x40);
-	
+		
 	/**
 	 * The BundleContext. This is only valid when the bundle is ACTIVE. It is set in the activate()
 	 * method and must not be accessed anymore once the deactivate() method was called or before activate()
@@ -108,6 +108,7 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 	 */
 	public void modified(final Map<String, Object> configuration) {
 		// update the internal configuration accordingly
+		logger.debug("pcf8574control: !!!!! modified !!!!!! ");
 	}
 	
 	/**
@@ -147,16 +148,18 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 		return "pcf8574control Refresh Service";
 	}
 	
+	private static int counter = 0;
+	
 	/**
 	 * @{inheritDoc}
 	 */
 	@Override
 	protected void execute() {
 		// the frequently executed code (polling) goes here ...		
-		logger.debug("execute() method is called! (pcf8574control) ItemNames: {}, Addresses: {}", providers.iterator().next().getItemNames().toString(), providers.iterator().next().getPCA9685Map().keySet());
-		eventPublisher.postCommand("pcf8574controlBindingStatus", StringType.valueOf("Addresses given in item-config: " + providers.iterator().next().getPCA9685Map().keySet()));		
+		logger.debug("execute() method is called! (pcf8574control) ItemNames: {}, Addresses: {}", providers.iterator().next().getItemNames().toString(), providers.iterator().next().getPCF8574Map().keySet());
+		//eventPublisher.postCommand("pcf8574controlBindingStatus", StringType.valueOf("Addresses given in item-config: " + providers.iterator().next().getPCA9685Map().keySet()));		
 	}
-
+	
 	/**
 	 * @{inheritDoc}
 	 */
@@ -166,39 +169,76 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 		// event bus goes here. This method is only called if one of the
 		// BindingProviders provide a binding for the given 'itemName'.
 		logger.debug("pcf8574control: internalReceiveCommand({},{}) is called!", itemName, command);
-		
-		for (pcf8574controlBindingProvider provider : providers) {
-			int i2cAddress = provider.getAddress(itemName);		
-			Pin pin = PCA9685Pin.ALL[provider.getPinNumber(itemName)];
-			logger.debug("pcf8574control: internalReceiveCommand: Address: {}, Pin: {}, PwmValue: {} is called!", i2cAddress, provider.getPinNumber(itemName), provider.getPwmValue(itemName));
-			if(command == OnOffType.ON){
-				provider.getPCA9685Map().get(i2cAddress).setOn(pin);
-				provider.setPwmValue(itemName, 100);
-			} else if(command == OnOffType.OFF) {
-				provider.getPCA9685Map().get(i2cAddress).setOff(pin);
-				provider.setPwmValue(itemName, 0);
-			} else if(command == IncreaseDecreaseType.INCREASE){
-				int pwmval = provider.getPwmValue(itemName);
-				if(pwmval < 100){
-					provider.setPwmValue(itemName, pwmval+1);
-					provider.getPCA9685Map().get(i2cAddress).setPwm(pin, NaturalFading.STEPS_100[pwmval+1]);
-				}
-			} else if(command == IncreaseDecreaseType.DECREASE){
-				int pwmval = provider.getPwmValue(itemName);
-				if(pwmval > 0){
-					provider.setPwmValue(itemName, pwmval-1);
-					provider.getPCA9685Map().get(i2cAddress).setPwm(pin, NaturalFading.STEPS_100[pwmval-1]);
-				}
-			} else {				
-				try{
-					Integer value = Integer.parseInt(command.toString());
-					provider.getPCA9685Map().get(i2cAddress).setPwm(pin, NaturalFading.STEPS_100[value]);
-					provider.setPwmValue(itemName, value);
-				} catch (Exception e) {
-					e.printStackTrace();
-				}
+				
+		try {
+			for (pcf8574controlBindingProvider provider : providers) {
+				int i2cAddress = provider.getAddress(itemName);		
+				Pin pin = PCF8574Pin.ALL[provider.getPinNumber(itemName)];
+				
+				PinListener lis = new PinListener() {					
+					@Override
+					public void handlePinEvent(PinEvent event) {						
+						logger.debug("---<<<<=================== Input listener event ======================>>>>--- {} {}", event);	
+						//eventPublisher.sendCommand("PinListener", StringType.valueOf(provider.getPCF8574Map().get(34).getState(pin)));
+					}
+				}; 
+				provider.getPCF8574Map().get(34).addListener(pin, lis);
+				
+//				if(counter==0){
+//					//digOutput = gpio.provisionDigitalOutputPin(provider.getPCF8574Map().get(i2cAddress), pin);
+//					logger.debug("pcf8574control: internalReceiveCommand: === digOutput initialized! === ");					
+//				}
+//				counter++; 
+//				if(command == OnOffType.ON){
+//					//gpio.setState(true, digOutput);
+//					//digOutput.setState(true);
+//					//provider.getGpioPinDigital(itemName).setState(true);
+//					provider.getPCF8574Map().get(i2cAddress).setState(pin, PinState.HIGH);					
+//					
+//					logger.debug("pcf8574control: internalReceiveCommand: --ON-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
+//				} else if(command == OnOffType.OFF) {
+//					//gpio.setState(false, digOutput);
+//					//digOutput.setState(false);
+//					//provider.getGpioPinDigital(itemName).setState(false);
+//					provider.getPCF8574Map().get(i2cAddress).setState(pin, PinState.LOW);
+//					logger.debug("pcf8574control: internalReceiveCommand: --OFF-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
+//				} 
+				
 			}
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
+			
+			
+//			if(command == OnOffType.ON){
+//				provider.getPCA9685Map().get(i2cAddress).setOn(pin);
+//				provider.setPwmValue(itemName, 100);
+//			} else if(command == OnOffType.OFF) {
+//				provider.getPCA9685Map().get(i2cAddress).setOff(pin);
+//				provider.setPwmValue(itemName, 0);
+//			} else if(command == IncreaseDecreaseType.INCREASE){
+//				int pwmval = provider.getPwmValue(itemName);
+//				if(pwmval < 100){
+//					provider.setPwmValue(itemName, pwmval+1);
+//					provider.getPCA9685Map().get(i2cAddress).setPwm(pin, NaturalFading.STEPS_100[pwmval+1]);
+//				}
+//			} else if(command == IncreaseDecreaseType.DECREASE){
+//				int pwmval = provider.getPwmValue(itemName);
+//				if(pwmval > 0){
+//					provider.setPwmValue(itemName, pwmval-1);
+//					provider.getPCA9685Map().get(i2cAddress).setPwm(pin, NaturalFading.STEPS_100[pwmval-1]);
+//				}
+//			} else {				
+//				try{
+//					Integer value = Integer.parseInt(command.toString());
+//					provider.getPCA9685Map().get(i2cAddress).setPwm(pin, NaturalFading.STEPS_100[value]);
+//					provider.setPwmValue(itemName, value);
+//				} catch (Exception e) {
+//					e.printStackTrace();
+//				}
+//			}
+		
 	}
 	
 	/**
