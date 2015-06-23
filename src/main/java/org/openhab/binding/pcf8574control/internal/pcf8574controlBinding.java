@@ -8,11 +8,16 @@
  */
 package org.openhab.binding.pcf8574control.internal;
 
+import java.util.Collection;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.TreeMap;
+
 import org.apache.commons.lang.StringUtils;
 import org.openhab.binding.pcf8574control.pcf8574controlBindingProvider;
 import org.openhab.core.binding.AbstractActiveBinding;
 import org.openhab.core.library.types.OnOffType;
+import org.openhab.core.library.types.OpenClosedType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.State;
@@ -20,14 +25,21 @@ import org.osgi.framework.BundleContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.pi4j.gpio.extension.pca.PCA9685Pin;
+import com.pi4j.gpio.extension.pcf.PCF8574GpioProvider;
 import com.pi4j.gpio.extension.pcf.PCF8574Pin;
 import com.pi4j.io.gpio.GpioController;
 import com.pi4j.io.gpio.GpioFactory;
 import com.pi4j.io.gpio.GpioPinDigitalOutput;
 import com.pi4j.io.gpio.Pin;
+import com.pi4j.io.gpio.PinMode;
 import com.pi4j.io.gpio.PinState;
 import com.pi4j.io.gpio.event.PinEvent;
 import com.pi4j.io.gpio.event.PinListener;
+import com.pi4j.wiringpi.Gpio;
+import com.pi4j.wiringpi.GpioInterrupt;
+import com.pi4j.wiringpi.GpioInterruptEvent;
+import com.pi4j.wiringpi.GpioInterruptListener;
 
 	
 
@@ -50,12 +62,15 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 	 */
 	private BundleContext bundleContext;
 
+	private long millisSinceLastCall;
+	
+	private TreeMap<AddressAndPin, Boolean> PinStateMap = new TreeMap<>();
 	
 	/** 
 	 * the refresh interval which is used to poll values from the pcf8574control
 	 * server (optional, defaults to 60000ms)
 	 */
-	private long refreshInterval = 5000;
+	private long refreshInterval = 400;
 	
 	public pcf8574controlBinding() {
 		logger.debug("pcf8574controlBinding binding started");
@@ -98,6 +113,16 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 		}
 
 		// read further config parameters here ...
+//		GpioInterruptListener pcf8574InterruptListener = new GpioInterruptListener() {			
+//			@Override
+//			public void pinStateChange(GpioInterruptEvent event) {				
+//				if(System.currentTimeMillis() - millisSinceLastCall >= 10){
+//					millisSinceLastCall = System.currentTimeMillis();
+//					readAllInputPins();
+//				}
+//			}
+//		};
+//		providers.iterator().next().setupInterruptPinForPortExpanderInt(pcf8574InterruptListener);
 		
 		setProperlyConfigured(true);
 	}
@@ -148,18 +173,18 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 		return "pcf8574control Refresh Service";
 	}
 	
-	private static int counter = 0;
-	
+
 	/**
 	 * @{inheritDoc}
 	 */
 	@Override
 	protected void execute() {
 		// the frequently executed code (polling) goes here ...		
-		logger.debug("execute() method is called! (pcf8574control) ItemNames: {}, Addresses: {}", providers.iterator().next().getItemNames().toString(), providers.iterator().next().getPCF8574Map().keySet());
-		//eventPublisher.postCommand("pcf8574controlBindingStatus", StringType.valueOf("Addresses given in item-config: " + providers.iterator().next().getPCA9685Map().keySet()));		
+		//logger.debug("execute() method is called! (pcf8574control) ItemNames: {}, Addresses: {}", providers.iterator().next().getItemNames().toString(), providers.iterator().next().getPCF8574Map().keySet());
+		//eventPublisher.postCommand("pcf8574controlBindingStatus", StringType.valueOf("Addresses given in item-config: " + providers.iterator().next().getPCA9685Map().keySet()));
+		readAllInputPins();
 	}
-	
+		
 	/**
 	 * @{inheritDoc}
 	 */
@@ -175,34 +200,19 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 				int i2cAddress = provider.getAddress(itemName);		
 				Pin pin = PCF8574Pin.ALL[provider.getPinNumber(itemName)];
 				
-				PinListener lis = new PinListener() {					
-					@Override
-					public void handlePinEvent(PinEvent event) {						
-						logger.debug("---<<<<=================== Input listener event ======================>>>>--- {} {}", event);	
-						//eventPublisher.sendCommand("PinListener", StringType.valueOf(provider.getPCF8574Map().get(34).getState(pin)));
-					}
-				}; 
-				provider.getPCF8574Map().get(34).addListener(pin, lis);
-				
-//				if(counter==0){
-//					//digOutput = gpio.provisionDigitalOutputPin(provider.getPCF8574Map().get(i2cAddress), pin);
-//					logger.debug("pcf8574control: internalReceiveCommand: === digOutput initialized! === ");					
-//				}
-//				counter++; 
-//				if(command == OnOffType.ON){
-//					//gpio.setState(true, digOutput);
-//					//digOutput.setState(true);
-//					//provider.getGpioPinDigital(itemName).setState(true);
-//					provider.getPCF8574Map().get(i2cAddress).setState(pin, PinState.HIGH);					
-//					
-//					logger.debug("pcf8574control: internalReceiveCommand: --ON-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
-//				} else if(command == OnOffType.OFF) {
-//					//gpio.setState(false, digOutput);
-//					//digOutput.setState(false);
-//					//provider.getGpioPinDigital(itemName).setState(false);
-//					provider.getPCF8574Map().get(i2cAddress).setState(pin, PinState.LOW);
-//					logger.debug("pcf8574control: internalReceiveCommand: --OFF-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
-//				} 
+				if(command == OnOffType.ON){
+					//gpio.setState(true, digOutput);
+					//digOutput.setState(true);
+					//provider.getGpioPinDigital(itemName).setState(true);
+					provider.getPCF8574Map().get(i2cAddress).setState(pin, PinState.HIGH);	
+					logger.debug("pcf8574control: internalReceiveCommand: --ON-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
+				} else if(command == OnOffType.OFF) {
+					//gpio.setState(false, digOutput);
+					//digOutput.setState(false);
+					//provider.getGpioPinDigital(itemName).setState(false);
+					provider.getPCF8574Map().get(i2cAddress).setState(pin, PinState.LOW);
+					logger.debug("pcf8574control: internalReceiveCommand: --OFF-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
+				} 
 				
 			}
 		} catch (Exception e) {
@@ -249,6 +259,54 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 		// the code being executed when a state was sent on the openHAB
 		// event bus goes here. This method is only called if one of the 
 		// BindingProviders provide a binding for the given 'itemName'.
-		logger.debug("internalReceiveUpdate({},{}) is called!", itemName, newState);
+		logger.debug("internalReceiveUpdate({},{}) is called!", itemName, newState);		
 	}	
+	
+	private void readAllInputPins(){
+		//logger.debug("<<<<<<<<<<<<<<<<<<<<<< READ ALL INPUT PINS is called! >>>>>>>>>>>>>>>>>>>>>>>>>");
+		for (pcf8574controlBindingProvider provider : providers) {
+			
+			for(Entry<Integer, PCF8574GpioProvider> entry : provider.getPCF8574Map().entrySet()){ //Every Board
+				int key = entry.getKey();
+				PCF8574GpioProvider prov = entry.getValue();				
+				for(Pin pin : PCF8574Pin.ALL){ //every Pin
+					if(prov.getMode(pin) == PinMode.DIGITAL_INPUT){
+//						logger.debug("Pinstate: {} of Pin: {}", prov.getState(pin), pin);
+						AddressAndPin addressAndPin = new AddressAndPin(key, pin); 
+						if(PinStateMap.containsKey(addressAndPin)){
+							if(PinStateMap.get(addressAndPin).booleanValue() != prov.getState(pin).isHigh()){ //If saved state is different to current state
+								try {
+									if(prov.getState(pin).isHigh()){
+										eventPublisher.postUpdate(getItemName(addressAndPin), OpenClosedType.OPEN);
+//										logger.debug("========= SEND COMMAND OPEN >>>>>>>>>>>>>>>>>>>>>>>>> {} {}", addressAndPin.address, addressAndPin.pin.getAddress());
+									} else {
+										eventPublisher.postUpdate(getItemName(addressAndPin), OpenClosedType.CLOSED);
+//										logger.debug("========= SEND COMMAND CLOSED >>>>>>>>>>>>>>>>>>>>>>>>> {} {}", addressAndPin.address, addressAndPin.pin.getAddress());
+									}
+								} catch (Exception e) {
+									e.printStackTrace();
+								}								
+								PinStateMap.replace(addressAndPin, prov.getState(pin).isHigh()); //Save current state
+							}
+						} else {
+							PinStateMap.put(new AddressAndPin(key, pin), prov.getState(pin).isHigh());
+						}						
+					}
+				}
+			}
+		}		
+	}
+	
+	private String getItemName(AddressAndPin addressAndPin){
+		for (pcf8574controlBindingProvider provider : providers) {
+			for (String itemName : provider.getItemNames()) {
+//				logger.debug("GET ITEM NAME >> {} ... {} {}", itemName, provider.getAddress(itemName), provider.getPinNumber(itemName));
+				if(provider.getAddress(itemName) == addressAndPin.address && provider.getPinNumber(itemName) == addressAndPin.pin.getAddress()){
+//					logger.debug("GET ITEM NAME >>>>>>>>>>>>>>>>>>>>>>>>> {}", itemName);
+					return itemName;
+				}
+			}		
+		}
+		return "ItemNotFound in getItemName in pcf8574control";
+	}
 }

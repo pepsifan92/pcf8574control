@@ -15,6 +15,7 @@ import org.openhab.core.binding.BindingProvider;
 import com.pi4j.gpio.extension.pcf.PCF8574GpioProvider;
 import com.pi4j.io.gpio.GpioPinDigital;
 import com.pi4j.io.gpio.GpioPinDigitalOutput;
+import com.pi4j.wiringpi.GpioInterruptListener;
 
 
 /**
@@ -59,5 +60,7 @@ public interface pcf8574controlBindingProvider extends BindingProvider {
 	 * @return Returns if the Item is configured. (true = is configured)
 	 */
 	public boolean isItemConfigured(String itemName);
+	
+	public void setupInterruptPinForPortExpanderInt(GpioInterruptListener pcf8574InterruptListener);
 	
 }
