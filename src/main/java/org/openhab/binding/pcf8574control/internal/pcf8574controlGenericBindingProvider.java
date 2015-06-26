@@ -8,18 +8,13 @@
  */
 package org.openhab.binding.pcf8574control.internal;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.TreeMap;
 
 import org.openhab.binding.pcf8574control.pcf8574controlBindingProvider;
 import org.openhab.core.binding.BindingConfig;
 import org.openhab.core.items.Item;
 import org.openhab.core.library.items.ContactItem;
-import org.openhab.core.library.items.DimmerItem;
-import org.openhab.core.library.items.NumberItem;
 import org.openhab.core.library.items.SwitchItem;
-import org.openhab.core.library.types.OpenClosedType;
 import org.openhab.model.item.binding.AbstractGenericBindingProvider;
 import org.openhab.model.item.binding.BindingConfigParseException;
 import org.slf4j.Logger;
@@ -29,18 +24,9 @@ import com.pi4j.gpio.extension.pcf.PCF8574GpioProvider;
 import com.pi4j.gpio.extension.pcf.PCF8574Pin;
 import com.pi4j.io.gpio.GpioController;
 import com.pi4j.io.gpio.GpioFactory;
-import com.pi4j.io.gpio.GpioPinDigital;
-import com.pi4j.io.gpio.GpioPinDigitalOutput;
 import com.pi4j.io.gpio.Pin;
 import com.pi4j.io.gpio.PinMode;
-import com.pi4j.io.gpio.event.PinEvent;
-import com.pi4j.io.gpio.event.PinListener;
 import com.pi4j.io.i2c.I2CBus;
-import com.pi4j.wiringpi.Gpio;
-import com.pi4j.wiringpi.GpioInterrupt;
-import com.pi4j.wiringpi.GpioInterruptEvent;
-import com.pi4j.wiringpi.GpioInterruptListener;
-import com.pi4j.wiringpi.GpioUtil;
 
 
 /**
@@ -54,7 +40,6 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 	private static final Logger logger = 
 			LoggerFactory.getLogger(pcf8574controlGenericBindingProvider.class);
 	
-	private final int INTERRUPT_PIN = 0; //WiringPi Pin 0 = GPIO 17
 	private TreeMap<Integer, PCF8574GpioProvider> PCF8574Map = new TreeMap<>();
 	final 	GpioController gpio = GpioFactory.getInstance();	
 	
@@ -71,10 +56,10 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 	 */
 	@Override
 	public void validateItemType(Item item, String bindingConfig) throws BindingConfigParseException {
-		if (!(item instanceof SwitchItem || item instanceof DimmerItem || item instanceof ContactItem)) {
+		if (!(item instanceof SwitchItem || item instanceof ContactItem)) {
 			throw new BindingConfigParseException("item '" + item.getName()
 					+ "' is of type '" + item.getClass().getSimpleName()
-					+ "', only Switch- and DimmerItems and ContactItems are allowed - please check your *.items configuration");
+					+ "', only Switch- and ContactItems are allowed - please check your *.items configuration");
 		}
 	}
 	
@@ -99,6 +84,7 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 				
 			logger.debug("processBindingConfiguration: (pcf8574control) ItemName: {}, Addresses: {}", item.toString(), PCF8574Map.keySet());
 			
+			@SuppressWarnings("static-access")
 			Pin pin = new PCF8574Pin().ALL[config.pinNumber];
 			PCF8574Map.get(config.address).unexport(pin);
 			if(properties[2].toLowerCase().equals("out")){
@@ -111,9 +97,7 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 		}catch(Exception e){
 			e.printStackTrace();
 		}
-		logger.debug("pcf8574controlGenericBindingProvider: processBindingConfiguration({},{}) is called!", config.address, config.pinNumber);
-		//parse bindingconfig here ...
-				
+		logger.debug("pcf8574controlGenericBindingProvider: processBindingConfiguration({},{}) is called!", config.address, config.pinNumber);				
 	}
 	
 	/* ================================= SELF WRITTEN METHODS - BEGIN ===============================*/
@@ -143,47 +127,25 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 			removeUnusedBoardsFromMap(config);
 		} catch (Exception e) {
 			e.printStackTrace();
-			//logger.debug("Exception in PCF8574 handleBoards... however, it works.");
 		}
 	}
 	
 	private void removeUnusedBoardsFromMap(pcf8574controlConfig config){
 		keyLoop:
 		for(Integer mapKey : PCF8574Map.keySet()){
-			logger.debug("handleBoards: mapKey {} !", mapKey);
 			for(BindingConfig bindingConfig : bindingConfigs.values()){
-				pcf8574controlConfig conf = (pcf8574controlConfig) bindingConfig;				
-				logger.debug("handleBoards: check {} !", conf.address);
+				pcf8574controlConfig conf = (pcf8574controlConfig) bindingConfig;	
 				if(mapKey == conf.address){
-					logger.debug("handleBoards: board found with address: {} !", conf.address);
+					//logger.debug("removeUnusedBoardsFromMap: board found with address: {} !", conf.address);
 					continue keyLoop;
 				}				
 			}
 			if(!bindingConfigs.values().isEmpty()){
 				PCF8574Map.remove(mapKey);
-				logger.debug("handleBoards: removed board with address: {} !", mapKey);
+				logger.debug("removeUnusedBoardsFromMap: removed board with address: {} !", mapKey);
 			}
 		}
 	}
-	
-	public void setupInterruptPinForPortExpanderInt(GpioInterruptListener pcf8574InterruptListener){
-		if(Gpio.wiringPiSetup() == -1){
-			logger.debug("setupInterruptPinForPortExpanderInt: WiringPiSetup ERROR!");
-			return;
-		}
-				
-//		logger.debug("setupInterruptPinForPortExpanderInt");
-
-		if(!GpioInterrupt.hasListener(pcf8574InterruptListener)){
-			GpioInterrupt.addListener(pcf8574InterruptListener);
-		}
-		GpioUtil.export(INTERRUPT_PIN, GpioUtil.DIRECTION_IN);
-		GpioUtil.setEdgeDetection(INTERRUPT_PIN, GpioUtil.EDGE_BOTH); //Only if State is low = false. (Interrupt is inverted, low says there was a change on one InputPin of the PCF8574)
-		Gpio.pinMode(INTERRUPT_PIN, Gpio.INPUT);
-		Gpio.pullUpDnControl(INTERRUPT_PIN, Gpio.PUD_DOWN); //For whatever..!?		
-		GpioInterrupt.enablePinStateChangeCallback(INTERRUPT_PIN);		
-	}
-	
 	
 	@Override
 	public int getAddress(String itemName) {
