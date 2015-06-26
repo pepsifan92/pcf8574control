@@ -8,14 +8,14 @@ This binding supports reading and writing of pin-states.
 
 ## Config in *.item file
 In the **items-file** of openHAB the following <b>configuration</b> is needed:<br>
-_Contact Name-of-Item { pcf8574control="I2CAddressInDecimal;PinNumber;direction" }_
+`Contact Name-of-Item { pcf8574control="I2CAddressInDecimal;PinNumber;direction" }`<br>
 
 **Input-Pin example:**<br>
-_Contact motionSensor { pcf8574control="32;0;in" }_ <br>
+`Contact motionSensor { pcf8574control="32;0;in" }` <br>
 This would get the state of the Pin 0 from the PCF8574 chip with the address 0x21 (33 in decimal)
 
 **Output-Pin example:**<br>
-_Contact led { pcf8574control="32;1;out" }_<br>
+`Contact led { pcf8574control="32;1;out" }`<br>
 This would set the state of the Pin 0 from the PCF8574 chip with the address 0x21 (33 in decimal)
 
 ## Config in *.sitemap file
@@ -23,4 +23,4 @@ This would set the state of the Pin 0 from the PCF8574 chip with the address 0x2
 `Text item=motionSensor label="motionSensor: [%s]"`<br>
 
 **Example** to set Pin from the website:<br>
-Switch item=led
+`Switch item=led`
