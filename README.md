@@ -12,11 +12,11 @@ In the **items-file** of openHAB the following <b>configuration</b> is needed:<b
 
 **Input-Pin example:**<br>
 `Contact motionSensor { pcf8574control="32;0;in" }` <br>
-This would get the state of the Pin 0 from the PCF8574 chip with the address 0x21 (33 in decimal)
+This would get the state of the Pin 0 from the PCF8574 chip with the address 0x20 (32 in decimal)
 
 **Output-Pin example:**<br>
 `Contact led { pcf8574control="32;1;out" }`<br>
-This would set the state of the Pin 0 from the PCF8574 chip with the address 0x21 (33 in decimal)
+This would set the state of the Pin 0 from the PCF8574 chip with the address 0x20 (32 in decimal)
 
 ## Config in *.sitemap file
 **Example** to show the read value on the website:<br>
