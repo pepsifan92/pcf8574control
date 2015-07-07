@@ -4,6 +4,7 @@ Controlling the chip pcf8574 (Port expander) via I2C from Raspberry Pi from open
 The chip PCF8591 is an I2C-Bus Portexpander and provides setting and getting the state of 8 Pins. A Pin can be HIGH or LOW.<br>
 **Addressrange of PCF8574:** 32-39 (0x20-0x27)<br>
 **Addressrange of PCF8574A:** 56-63 (0x38-0x3F)<br>
+**Pinrange of PCF8574:** 0-7<br>
 This binding supports reading and writing of pin-states.
 
 ## Config in *.item file

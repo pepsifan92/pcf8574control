@@ -8,6 +8,7 @@
  */
 package org.openhab.binding.pcf8574control.internal;
 
+import java.io.IOException;
 import java.util.TreeMap;
 
 import org.openhab.binding.pcf8574control.pcf8574controlBindingProvider;
@@ -27,6 +28,8 @@ import com.pi4j.io.gpio.GpioFactory;
 import com.pi4j.io.gpio.Pin;
 import com.pi4j.io.gpio.PinMode;
 import com.pi4j.io.i2c.I2CBus;
+import com.pi4j.io.i2c.I2CDevice;
+import com.pi4j.io.i2c.I2CFactory;
 
 
 /**
@@ -40,8 +43,17 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 	private static final Logger logger = 
 			LoggerFactory.getLogger(pcf8574controlGenericBindingProvider.class);
 	
-	private TreeMap<Integer, PCF8574GpioProvider> PCF8574Map = new TreeMap<>();
+	I2CBus 	bus;;
+	private TreeMap<Integer, I2CDevice> PCF8574Map = new TreeMap<>();
 	final 	GpioController gpio = GpioFactory.getInstance();	
+	
+	public pcf8574controlGenericBindingProvider() {
+		 try {
+			bus = I2CFactory.getInstance(I2CBus.BUS_1);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
 	
 	/**
 	 * {@inheritDoc}
@@ -78,21 +90,17 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 			config.address = Integer.parseInt(properties[0]);
 			config.pinNumber = Integer.parseInt(properties[1]);
 			
+			if(properties[2].toLowerCase().equals("out")){
+				config.isOutput = true;
+			} else if (properties[2].toLowerCase().equals("in")){
+				config.isOutput = false;
+			}
+			
 			checkOfValidValues(config, item.getName());
 			addBindingConfig(item, config);	
 			handleBoards(config); //Create new PCF8574GpioProvider for eventually new boards.
 				
 			logger.debug("processBindingConfiguration: (pcf8574control) ItemName: {}, Addresses: {}", item.toString(), PCF8574Map.keySet());
-			
-			@SuppressWarnings("static-access")
-			Pin pin = new PCF8574Pin().ALL[config.pinNumber];
-			PCF8574Map.get(config.address).unexport(pin);
-			if(properties[2].toLowerCase().equals("out")){
-				logger.debug("processBindingConfiguration: (pcf8574control) ---<<<< gpioPinDigitalOutput >>>>---");				
-				PCF8574Map.get(config.address).export(pin, PinMode.DIGITAL_OUTPUT);
-			} else if (properties[2].toLowerCase().equals("in")){
-				PCF8574Map.get(config.address).export(pin, PinMode.DIGITAL_INPUT);				
-			}
 			
 		}catch(Exception e){
 			e.printStackTrace();
@@ -118,7 +126,8 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 		try {
 			if(!PCF8574Map.containsKey(config.address)){
 				try{
-					PCF8574Map.put(config.address, new PCF8574GpioProvider(I2CBus.BUS_1, config.address));	
+					I2CDevice device = bus.getDevice(config.address);		
+					PCF8574Map.put(config.address, device);	
 					logger.debug("handleBoards: added PCF8574 board with address: {} !", config.address);
 				} catch (Exception e) {
 					e.printStackTrace();
@@ -191,6 +200,27 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 	}
 	
 	@Override
+	public boolean getIsOutput(String itemName) {
+		pcf8574controlConfig config = (pcf8574controlConfig) bindingConfigs.get(itemName);
+		
+		if (config == null) {
+			throw new IllegalArgumentException("The item name '" + itemName + "'is invalid or the item isn't configured");
+		}
+		
+		return config.isOutput;
+	}
+
+	@Override
+	public void setIsOutput(String itemName, boolean value) {
+		pcf8574controlConfig config = (pcf8574controlConfig) bindingConfigs.get(itemName);
+		
+		if (config == null) {
+			throw new IllegalArgumentException("The item name '" + itemName + "'is invalid or the item isn't configured");
+		}
+		config.isOutput = value;		
+	}
+	
+	@Override
 	public boolean isItemConfigured(String itemName) {
 		if (bindingConfigs.containsKey(itemName)) {
 			return true;
@@ -202,16 +232,15 @@ public class pcf8574controlGenericBindingProvider extends AbstractGenericBinding
 	public class pcf8574controlConfig implements BindingConfig{
 		int address;
 		int pinNumber;
+		boolean isOutput;
 		boolean isHigh;
 	}
 
 
 	@Override
-	public TreeMap<Integer, PCF8574GpioProvider> getPCF8574Map() {		
+	public TreeMap<Integer, I2CDevice> getPCF8574Map() {		
 		return PCF8574Map;
 	}
-
-	
 	/* ================================= SELF WRITTEN METHODS - END ===============================*/
 	
 }

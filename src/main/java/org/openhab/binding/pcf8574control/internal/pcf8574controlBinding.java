@@ -8,6 +8,7 @@
  */
 package org.openhab.binding.pcf8574control.internal;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TreeMap;
@@ -28,6 +29,10 @@ import com.pi4j.gpio.extension.pcf.PCF8574Pin;
 import com.pi4j.io.gpio.Pin;
 import com.pi4j.io.gpio.PinMode;
 import com.pi4j.io.gpio.PinState;
+import com.pi4j.io.i2c.I2CDevice;
+import com.sun.corba.se.spi.orbutil.fsm.Guard.Result;
+import com.sun.scenario.effect.impl.prism.PrImage;
+import com.sun.xml.internal.bind.v2.runtime.unmarshaller.XsiNilLoader.Array;
 
 	
 
@@ -137,7 +142,7 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 	@Override
 	protected void execute() {
 		// the frequently executed code (polling) goes here ...		
-		readAllInputPins();
+		readAllInputPins();		
 	}
 		
 	/**
@@ -156,12 +161,39 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 				Pin pin = PCF8574Pin.ALL[provider.getPinNumber(itemName)];
 				
 				if(command == OnOffType.ON){
-					provider.getPCF8574Map().get(i2cAddress).setState(pin, PinState.HIGH);	
-					logger.debug("pcf8574control: internalReceiveCommand: --ON-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
+					provider.setIsHigh(itemName, true);
+//					logger.debug("pcf8574control: internalReceiveCommand: --ON-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
 				} else if(command == OnOffType.OFF) {
-					provider.getPCF8574Map().get(i2cAddress).setState(pin, PinState.LOW);
-					logger.debug("pcf8574control: internalReceiveCommand: --OFF-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
-				} 				
+					provider.setIsHigh(itemName, false);
+//					logger.debug("pcf8574control: internalReceiveCommand: --OFF-- Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
+				} 	
+
+				Boolean[] boardOutputState = {false,false,false,false, false,false,false,false};
+				for (String iName : provider.getItemNames()) {
+					if(provider.getAddress(iName) == i2cAddress){
+						if(!provider.getIsOutput(iName)){
+							logger.debug("pcf8574control: internalReceiveCommand: INPUT Pin! ItemName {}", iName);
+							return; //Its a Input.
+						}
+						boardOutputState[provider.getPinNumber(iName)] = provider.getIsHigh(iName);
+					}
+				}
+//				logger.debug("pcf8574control: internalReceiveCommand:  Address: {}, Pin: {}", i2cAddress, provider.getPinNumber(itemName));
+				Byte portByte = 0; 
+				for (int i = 0; i < boardOutputState.length; i++) {
+					if (boardOutputState[i]) {
+						portByte = (byte) (portByte | (0x01 << i));
+					}					
+				}
+//				logger.debug("pcf8574control: internalReceiveCommand:  Byte {}", portByte);
+				
+				for(Entry<Integer, I2CDevice> entry : provider.getPCF8574Map().entrySet()){ //Every Board
+					int key = entry.getKey();
+					I2CDevice prov = entry.getValue();
+					if(key == i2cAddress){
+						prov.write(portByte); //only write, if the address of Board of this Pin is equal to the given I2CDevice to prevent writing on a InputChip 
+					}
+				}
 			}
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -182,23 +214,36 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 	private void readAllInputPins(){
 //		logger.debug("<<<<<<<<<<<<<<<<<<<<<< READ ALL INPUT PINS is called! >>>>>>>>>>>>>>>>>>>>>>>>>");
 		for (pcf8574controlBindingProvider provider : providers) {			
-			for(Entry<Integer, PCF8574GpioProvider> entry : provider.getPCF8574Map().entrySet()){ //Every Board
+			for(Entry<Integer, I2CDevice> entry : provider.getPCF8574Map().entrySet()){ //Every Board
 				int key = entry.getKey();
-				PCF8574GpioProvider prov = entry.getValue();				
+				I2CDevice prov = entry.getValue();
+				int readValue = 0;
+				try {
+					readValue = prov.read(); //Read via I2C only once per Device/Board.
+				} catch (IOException e1) {
+					e1.printStackTrace();
+				} 
 				for(Pin pin : PCF8574Pin.ALL){ //every Pin
-					if(prov.getMode(pin) == PinMode.DIGITAL_INPUT){
-//						logger.debug("Pinstate: {} of Pin: {}", prov.getState(pin), pin);
-						AddressAndPin addressAndPin = new AddressAndPin(key, pin); 
-						boolean TempPinState = prov.getState(pin).isHigh();
+					AddressAndPin addressAndPin = new AddressAndPin(key, pin);
+					String itemName = getItemName(addressAndPin);
+//					logger.debug("========= addressAndPin: key: {} pin: {} itemName: {}", key, pin.getAddress(), itemName);
+					if (itemName == null) {
+						continue;
+					}
+					if(!provider.getIsOutput(itemName)){
+//						logger.debug("Pinstate: {} of Pin: {}", prov.getState(pin), pin);					
+						boolean TempPinState = getSinglePortState(readValue, pin.getAddress());	
 						if(PinStateMap.containsKey(addressAndPin)){
+//							logger.debug("========= Digital_Input Address and Pin contained: key {} pin: {}", key, pin);
 							if(PinStateMap.get(addressAndPin).booleanValue() != TempPinState){ //If saved state is different to current state
+//								logger.debug("========= TempPinState != saved State: {} - {} {}", PinStateMap.get(addressAndPin).booleanValue(), key, pin);
 								try {
 									if(TempPinState){
 										eventPublisher.postUpdate(getItemName(addressAndPin), OpenClosedType.OPEN);
-//										logger.debug("========= SEND COMMAND OPEN >>>>>>>>>>>>>>>>>>>>>>>>> {} {}", addressAndPin.address, addressAndPin.pin.getAddress());
+										logger.debug("========= SEND COMMAND OPEN >>>>>>>>>>>>>>>>>>>>>>>>> {} {}", addressAndPin.address, addressAndPin.pin.getAddress());
 									} else {
 										eventPublisher.postUpdate(getItemName(addressAndPin), OpenClosedType.CLOSED);
-//										logger.debug("========= SEND COMMAND CLOSED >>>>>>>>>>>>>>>>>>>>>>>>> {} {}", addressAndPin.address, addressAndPin.pin.getAddress());
+										logger.debug("========= SEND COMMAND CLOSED >>>>>>>>>>>>>>>>>>>>>>>>> {} {}", addressAndPin.address, addressAndPin.pin.getAddress());
 									}
 								} catch (Exception e) {
 									e.printStackTrace();
@@ -208,11 +253,11 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 						} else {
 							PinStateMap.put(new AddressAndPin(key, pin), TempPinState);
 							//Update status on first call 
-							if(TempPinState){
-								eventPublisher.postUpdate(getItemName(addressAndPin), OpenClosedType.OPEN);
-							} else {
-								eventPublisher.postUpdate(getItemName(addressAndPin), OpenClosedType.CLOSED);
-							}
+//							if(TempPinState){
+//								eventPublisher.postUpdate(getItemName(addressAndPin), OpenClosedType.OPEN);
+//							} else {
+//								eventPublisher.postUpdate(getItemName(addressAndPin), OpenClosedType.CLOSED);
+//							}
 						}						
 					}
 				}
@@ -223,11 +268,23 @@ public class pcf8574controlBinding extends AbstractActiveBinding<pcf8574controlB
 	private String getItemName(AddressAndPin addressAndPin){
 		for (pcf8574controlBindingProvider provider : providers) {
 			for (String itemName : provider.getItemNames()) {
+//				logger.debug("++++++++++++ getItemName {} - {}", provider.getAddress(itemName), provider.getPinNumber(itemName));
 				if(provider.getAddress(itemName) == addressAndPin.address && provider.getPinNumber(itemName) == addressAndPin.pin.getAddress()){
 					return itemName;
 				}
 			}		
 		}
-		return "ItemNotFound in getItemName in pcf8574control";
+		return null;
+	}
+	
+	private boolean getSinglePortState(int portReadValue, int pinNumber){
+		byte readVal = (byte) portReadValue;			
+		byte result = (byte) ((readVal >> pinNumber) & 0x01); 
+//		logger.debug("OOOOO getSinglePortState  {} - {}", readVal, result);
+		if (result == 1) {
+//			logger.debug("OOOOO getSinglePortState TRUEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEES");
+			return true;
+		}
+		return false;		
 	}
 }

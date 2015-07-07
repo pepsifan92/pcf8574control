@@ -11,6 +11,7 @@ package org.openhab.binding.pcf8574control;
 import java.util.TreeMap;
 import org.openhab.core.binding.BindingProvider;
 import com.pi4j.gpio.extension.pcf.PCF8574GpioProvider;
+import com.pi4j.io.i2c.I2CDevice;
 
 
 /**
@@ -24,7 +25,7 @@ public interface pcf8574controlBindingProvider extends BindingProvider {
 	 * If all given items have the same I2C Address, it should exist only one Map-Entry).    
 	 * @return Returns the map with all configured Boards.
 	 */
-	public TreeMap<Integer, PCF8574GpioProvider> getPCF8574Map();
+	public TreeMap<Integer, I2CDevice> getPCF8574Map();
 	
 	/**
 	 * Get the I2C Address of the given Item
@@ -53,6 +54,19 @@ public interface pcf8574controlBindingProvider extends BindingProvider {
 	 * @param itemName Name of the Item 
 	 */
 	public void setIsHigh(String itemName, boolean value);
+	
+	/**
+	 * Get the IsOutput value of the given Item. 
+	 * @param itemName Name of the Item 
+	 * @return Returns the IsOutput value which means the mode of the Pin.
+	 */
+	public boolean getIsOutput(String itemName);
+	
+	/**
+	 * Set the IsOutput value of the given Item. 
+	 * @param itemName Name of the Item 
+	 */
+	public void setIsOutput(String itemName, boolean value);
 	
 	/**
 	 * Is the given Item already configured?
